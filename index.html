@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#3730a3">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Geo Camera Calculator v1.4 (PWA)</title>
+    
+    <link rel="manifest" href="./manifest.json">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+
+    <style>
+        #map { height: 400px; width: 100%; border-radius: 0.5rem; z-index: 1; }
+        .compass-arrow { transition: transform 0.2s ease-out; }
+        .leaflet-control-layers { z-index: 999; }
+        
+        /* Crosshair Styling */
+        .crosshair-container {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px; height: 60px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .crosshair-line {
+            position: absolute;
+            background-color: rgba(239, 68, 68, 1); /* Red-500 strong */
+            box-shadow: 0 0 2px rgba(255,255,255,0.8);
+        }
+        .ch-h { top: 29px; left: 0; width: 60px; height: 2px; }
+        .ch-v { left: 29px; top: 0; width: 2px; height: 60px; }
+        
+        /* Data Overlay on Camera */
+        .hud-overlay {
+            position: absolute;
+            top: 10px; left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #00ff00;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 20;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+
+    <div class="max-w-md mx-auto bg-white shadow-lg rounded-xl overflow-hidden">
+        
+        <div class="bg-indigo-800 p-4 text-white flex justify-between items-center">
+            <h1 class="font-bold text-lg"><i class="fa-solid fa-ruler-combined mr-2"></i>Geo Calc v1.4</h1>
+            <div class="flex items-center space-x-2">
+                <span id="saveStatus" class="hidden text-xs bg-green-500 px-2 py-1 rounded fade-in">Đã lưu!</span>
+            </div>
+        </div>
+
+        <div id="installBanner" class="hidden bg-blue-100 border-b border-blue-200 p-3 flex justify-between items-center">
+            <span class="text-sm text-blue-800 font-medium">Cài đặt ứng dụng này?</span>
+            <button id="btnInstall" class="bg-blue-600 text-white text-xs px-3 py-1.5 rounded font-bold shadow hover:bg-blue-700">
+                Cài đặt ngay
+            </button>
+        </div>
+
+        <div class="p-4 border-b border-gray-200">
+            <h2 class="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">1. Trạng thái & Cấu hình</h2>
+            
+            <button id="requestPermissionBtn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded mb-3 hidden transition">
+                <i class="fa-solid fa-compass mr-2"></i>Cấp quyền Cảm biến (iOS)
+            </button>
+
+            <div class="mb-3 flex items-center bg-yellow-50 p-2 rounded border border-yellow-200">
+                <i class="fa-solid fa-text-height text-yellow-600 mr-2"></i>
+                <label class="text-sm font-medium text-gray-700 mr-2 flex-1">Chiều cao máy (m):</label>
+                <input type="number" id="deviceHeight" value="1.5" step="0.1" class="w-20 p-1 border border-gray-300 rounded text-center font-bold text-indigo-700 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-gray-50 text-center p-2 rounded border border-gray-200">
+                    <div class="text-xs text-gray-500">GPS</div>
+                    <div id="gpsAccuracy" class="font-mono font-bold text-green-600 text-sm">-- m</div>
+                </div>
+                <div class="bg-gray-50 text-center p-2 rounded border border-gray-200 relative">
+                    <div class="text-xs text-gray-500">Hướng (Azimuth)</div>
+                    <div id="compassHeading" class="font-mono font-bold text-blue-600 text-sm">--°</div>
+                    <div class="absolute top-1 right-1">
+                        <i id="compassIcon" class="fa-solid fa-location-arrow compass-arrow text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-indigo-50">
+            <h2 class="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">2. Ngắm chân đối tượng</h2>
+            
+            <div class="relative bg-black rounded-lg overflow-hidden shadow-md mb-3" style="min-height: 300px;">
+                <video id="cameraFeed" autoplay playsinline class="w-full h-80 object-cover"></video>
+                <canvas id="cameraCanvas" class="hidden"></canvas>
+                <img id="capturedImage" class="absolute top-0 left-0 w-full h-full object-cover hidden z-20">
+
+                <div id="hudOverlay" class="hud-overlay hidden">
+                    Tilt (Beta): <span id="hudTilt">--</span>°<br>
+                    Dist (Calc): <span id="hudDist" class="text-xl font-bold text-white">--</span>m
+                </div>
+
+                <div id="crosshairOverlay" class="crosshair-container">
+                    <div class="crosshair-line ch-h"></div>
+                    <div class="crosshair-line ch-v"></div>
+                </div>
+                <div id="crosshairLabel" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 mt-8 text-white text-xs font-bold bg-red-600 px-2 py-0.5 rounded opacity-80 pointer-events-none z-10 hidden">
+                    NGẮM VÀO CHÂN
+                </div>
+
+                <div class="absolute bottom-4 left-0 right-0 flex justify-center z-30 space-x-4">
+                    <button id="btnStartCamera" onclick="startCamera()" class="bg-indigo-600 text-white p-3 rounded-full shadow-lg animate-pulse">
+                        <i class="fa-solid fa-video"></i> Bật Camera
+                    </button>
+                    <button id="btnCapture" onclick="capturePhoto()" class="bg-white text-red-600 border-4 border-gray-300 w-16 h-16 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 disabled:opacity-50 hidden">
+                        <i class="fa-solid fa-camera text-2xl"></i>
+                    </button>
+                    <button id="btnRetake" onclick="retakePhoto()" class="bg-gray-600 text-white p-3 rounded-full shadow-lg hidden">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Khoảng cách (Tự động tính)</label>
+                <div class="flex shadow-sm">
+                    <input type="number" id="distanceInput" placeholder="Sẽ tự điền khi chụp..." readonly class="flex-1 p-3 border border-gray-300 bg-gray-100 text-gray-500 rounded-l focus:outline-none font-bold">
+                    <span class="bg-gray-200 text-gray-700 font-bold p-3 rounded-r border border-l-0 border-gray-300">m</span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1 italic">* Công thức: D = Cao / tan(Góc nghiêng từ mặt phẳng).</p>
+            </div>
+
+            <button onclick="calculateTarget()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded shadow-lg transform active:scale-95 transition flex justify-center items-center">
+                <i class="fa-solid fa-calculator mr-2"></i>Tính toán & Ghim Map
+            </button>
+        </div>
+
+        <div class="p-4">
+            <h2 class="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">3. Bản đồ & Lưu</h2>
+            <div class="relative">
+                <div id="map"></div>
+            </div>
+
+            <div id="actionArea" class="mt-4 hidden space-y-3">
+                <div class="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800">
+                    <i class="fa-solid fa-check-circle mr-1"></i> Hoàn tất.
+                </div>
+                <button id="btnSaveFirebase" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded shadow-lg flex justify-center items-center transition">
+                    <i class="fa-brands fa-google-drive mr-2"></i> Lưu vào Firebase
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = { 
+            apiKey: "AIzaSyCzWjfcD5Dgq7V-i2izb9tKLR6QM6qWPQo", 
+            authDomain: "tavietnam-78ae8.firebaseapp.com", 
+            projectId: "tavietnam-78ae8", 
+            storageBucket: "tavietnam-78ae8.firebasestorage.app", 
+            messagingSenderId: "670121705534", 
+            appId: "1:670121705534:web:1027ad98550573ad37116f" 
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.saveToFirestore = async function(data) {
+            const btn = document.getElementById('btnSaveFirebase');
+            const originalText = btn.innerHTML;
+            
+            try {
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Đang lưu...';
+                btn.disabled = true;
+
+                const docRef = await addDoc(collection(db, "geo_points"), {
+                    ...data,
+                    timestamp: serverTimestamp(),
+                    device_agent: navigator.userAgent
+                });
+
+                console.log("Document saved: ", docRef.id);
+                btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i> Đã lưu thành công';
+                btn.classList.replace('bg-red-600', 'bg-green-600');
+                
+                document.getElementById('saveStatus').classList.remove('hidden');
+                setTimeout(() => document.getElementById('saveStatus').classList.add('hidden'), 3000);
+
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                alert("Lỗi khi lưu: " + e.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
+
+    <script>
+        // --- PWA Installation Logic ---
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const banner = document.getElementById('installBanner');
+            if(banner) banner.classList.remove('hidden');
+        });
+
+        const btnInstall = document.getElementById('btnInstall');
+        if(btnInstall) {
+            btnInstall.addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log(`User response to the install prompt: ${outcome}`);
+                    deferredPrompt = null;
+                    document.getElementById('installBanner').classList.add('hidden');
+                }
+            });
+        }
+
+        // --- Global State ---
+        let map, userMarker, targetMarker, targetLine;
+        let currentLat = null, currentLng = null, currentHeading = 0, currentTilt = 0;
+        let calculatedDistance = 0;
+        let videoStream = null, capturedImageBase64 = null;
+        let lastCalculatedData = null;
+        let isCameraActive = false;
+
+        // --- 1. Map Init ---
+        function initMap() {
+            const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: 'OSM' });
+            const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: 'Esri' });
+
+            map = L.map('map', {
+                center: [10.7769, 106.7009],
+                zoom: 15,
+                layers: [streetLayer]
+            });
+            L.control.layers({ "Đường phố": streetLayer, "Vệ tinh": satelliteLayer }).addTo(map);
+        }
+
+        // --- 2. Camera & Distance Logic ---
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" } 
+                });
+                videoStream = stream;
+                document.getElementById('cameraFeed').srcObject = stream;
+                
+                // UI Updates
+                document.getElementById('btnStartCamera').classList.add('hidden');
+                document.getElementById('btnCapture').classList.remove('hidden');
+                document.getElementById('hudOverlay').classList.remove('hidden');
+                document.getElementById('crosshairLabel').classList.remove('hidden');
+                document.getElementById('capturedImage').classList.add('hidden');
+                
+                isCameraActive = true;
+            } catch (err) {
+                alert("Lỗi Camera: " + err.message);
+            }
+        }
+
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+                isCameraActive = false;
+            }
+        }
+
+        function capturePhoto() {
+            if (!videoStream) return;
+
+            // 1. Capture Image
+            const video = document.getElementById('cameraFeed');
+            const canvas = document.getElementById('cameraCanvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            capturedImageBase64 = canvas.toDataURL('image/jpeg');
+            
+            document.getElementById('capturedImage').src = capturedImageBase64;
+            document.getElementById('capturedImage').classList.remove('hidden');
+            
+            // 2. Freeze Distance Value into Input
+            document.getElementById('distanceInput').value = calculatedDistance.toFixed(2);
+
+            // 3. UI Toggle
+            stopCamera();
+            document.getElementById('btnCapture').classList.add('hidden');
+            document.getElementById('btnRetake').classList.remove('hidden');
+            document.getElementById('hudOverlay').classList.add('hidden');
+            document.getElementById('crosshairLabel').classList.add('hidden');
+        }
+
+        function retakePhoto() {
+            document.getElementById('btnRetake').classList.add('hidden');
+            startCamera();
+        }
+
+        // --- 3. Sensors (Orientation & Distance Calc) ---
+        function calculateDistanceRealtime(beta) {
+            // Beta: 90 is upright. 0 is flat. 
+            // When looking down, beta < 90.
+            // Angle of depression (from horizontal) = beta.
+            // Formula: Distance = Height * tan(beta_radians)
+            
+            const h = parseFloat(document.getElementById('deviceHeight').value) || 1.5;
+            let dist = 0;
+
+            // Clamp beta to avoid infinity or negative
+            // Assuming portrait mode:
+            // Beta ~ 90 (Horizon) -> dist = Infinity
+            // Beta ~ 0 (Feet) -> dist = 0
+            
+            let angle = beta; 
+            if (angle > 89) angle = 89; // Max distance clamp
+            if (angle < 1) angle = 1;
+
+            const rad = angle * Math.PI / 180;
+            dist = h * Math.tan(rad);
+
+            return dist;
+        }
+
+        function handleOrientation(event) {
+            // 1. Compass
+            let heading = 0;
+            if (event.webkitCompassHeading) heading = event.webkitCompassHeading;
+            else if (event.alpha) heading = 360 - event.alpha;
+            
+            currentHeading = heading;
+            document.getElementById('compassHeading').innerText = Math.round(heading) + "°";
+            document.getElementById('compassIcon').style.transform = `rotate(${heading}deg)`;
+
+            // 2. Tilt & Distance (Only update if Camera is active)
+            if (isCameraActive) {
+                let beta = event.beta; // In degrees. Upright ~90.
+                
+                // Simple validation for Portrait usage
+                if (beta === null) return;
+                
+                // Normalizing Beta for basic use cases (User holds phone up)
+                // If user holds phone strictly upright, beta is 90.
+                // As they tilt forward to look at ground, beta decreases.
+                
+                // Fix for cases where beta might jump (Android sometimes behaves differently)
+                // For this V1.3, we assume standard HTML5 Spec:
+                // Beta is 90 when device is upright.
+                
+                // Calculate
+                currentTilt = beta;
+                const dist = calculateDistanceRealtime(beta);
+                calculatedDistance = dist;
+
+                // Update HUD
+                document.getElementById('hudTilt').innerText = Math.round(beta);
+                
+                let distDisplay = dist > 500 ? ">500" : dist.toFixed(1);
+                document.getElementById('hudDist').innerText = distDisplay;
+            }
+        }
+
+        function requestPermissions() {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(permissionState => {
+                    if (permissionState === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                        document.getElementById('requestPermissionBtn').classList.add('hidden');
+                    }
+                }).catch(console.error);
+            }
+        }
+
+        // --- 4. GPS ---
+        function startGPS() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition(pos => {
+                    currentLat = pos.coords.latitude;
+                    currentLng = pos.coords.longitude;
+                    document.getElementById('gpsAccuracy').innerText = `±${Math.round(pos.coords.accuracy)}m`;
+
+                    if (!userMarker) {
+                        userMarker = L.marker([currentLat, currentLng]).addTo(map).bindPopup("Bạn ở đây");
+                        map.setView([currentLat, currentLng], 18);
+                    } else {
+                        userMarker.setLatLng([currentLat, currentLng]);
+                    }
+                }, err => console.warn(err), { enableHighAccuracy: true });
+            }
+        }
+
+        // --- 5. Final Calculation ---
+        function calculateTarget() {
+            const distance = parseFloat(document.getElementById('distanceInput').value);
+
+            if (!currentLat || !currentLng) return alert("Chờ GPS...");
+            if (!distance || distance <= 0) return alert("Chưa có khoảng cách (Hãy chụp ảnh).");
+
+            // Geodesy
+            const R = 6371000;
+            const lat1 = currentLat * Math.PI / 180;
+            const lng1 = currentLng * Math.PI / 180;
+            const brng = currentHeading * Math.PI / 180;
+
+            const lat2 = Math.asin(Math.sin(lat1)*Math.cos(distance/R) + Math.cos(lat1)*Math.sin(distance/R)*Math.cos(brng));
+            const lng2 = lng1 + Math.atan2(Math.sin(brng)*Math.sin(distance/R)*Math.cos(lat1), Math.cos(distance/R)-Math.sin(lat1)*Math.sin(lat2));
+
+            const tLat = lat2 * 180 / Math.PI;
+            const tLng = lng2 * 180 / Math.PI;
+
+            // Map Update
+            if (targetMarker) map.removeLayer(targetMarker);
+            if (targetLine) map.removeLayer(targetLine);
+
+            // Create Draggable Marker
+            targetMarker = L.marker([tLat, tLng], {draggable: true}).addTo(map);
+            
+            // Info Popup
+            const imgSrc = document.getElementById('capturedImage').src;
+            let content = `<b>Vị trí tính toán</b><br>Dist: ${distance}m<br>Azimuth: ${Math.round(currentHeading)}°`;
+            if (imgSrc && imgSrc.length > 100) content += `<br><img src="${imgSrc}" style="width:120px;margin-top:5px;border-radius:4px">`;
+            
+            targetMarker.bindPopup(content).openPopup();
+            targetLine = L.polyline([[currentLat, currentLng], [tLat, tLng]], {color: 'red', dashArray: '5, 10'}).addTo(map);
+            map.fitBounds(L.featureGroup([userMarker, targetMarker]).getBounds().pad(0.2));
+
+            // Data Prep
+            const finalImage = (imgSrc && imgSrc.length < 1000000) ? imgSrc : "img_too_large";
+            lastCalculatedData = {
+                user_lat: currentLat, user_lng: currentLng,
+                target_lat: tLat, target_lng: tLng,
+                azimuth: currentHeading, distance: distance,
+                device_height: document.getElementById('deviceHeight').value,
+                tilt_beta: currentTilt,
+                image_base64: finalImage
+            };
+
+            document.getElementById('actionArea').classList.remove('hidden');
+            
+            // Update coord on drag
+            targetMarker.on('dragend', e => {
+                const pos = e.target.getLatLng();
+                lastCalculatedData.target_lat = pos.lat;
+                lastCalculatedData.target_lng = pos.lng;
+            });
+
+            // Bind Save
+            const saveBtn = document.getElementById('btnSaveFirebase');
+            saveBtn.onclick = () => window.saveToFirestore && window.saveToFirestore(lastCalculatedData);
+        }
+
+        // --- Init ---
+        window.onload = function() {
+            initMap();
+            startGPS();
+            
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                document.getElementById('requestPermissionBtn').classList.remove('hidden');
+                document.getElementById('requestPermissionBtn').addEventListener('click', requestPermissions);
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+
+            // Register Service Worker for PWA
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('SW registered!', reg))
+                .catch(err => console.log('SW failed', err));
+            }
+        };
+    </script>
+</body>
+</html>
