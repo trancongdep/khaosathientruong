@@ -1,10 +1,11 @@
 {
-  "name": "Khảo sát hiện trường",
-  "short_name": "KSHT",
+  "name": "Geo Camera Calc",
+  "short_name": "GeoCalc",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "background_color": "#f3f4f6",
+  "theme_color": "#3730a3",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "icon-192.png",
