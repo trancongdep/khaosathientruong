@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pole Checker v1.0</title>
+    <title>Pole Checker v2.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 
@@ -12,7 +13,7 @@
         .camera-container {
             position: relative;
             width: 100%;
-            height: 80vh; /* Chiếm 80% chiều cao màn hình */
+            height: 85vh; /* Tăng chiều cao vùng nhìn */
             background: #000;
             overflow: hidden;
             border-radius: 12px;
@@ -24,15 +25,7 @@
             object-fit: cover;
         }
 
-        /* Dây dọi điện tử (Plumb Line Interface) */
-        .overlay-layer {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            pointer-events: none;
-            z-index: 10;
-        }
-
-        /* 1. Trục Chuẩn Màn Hình (Fixed Center Line) - Màu Xanh */
+        /* Center Axis (Trục Máy - Cố định) */
         .center-axis {
             position: absolute;
             left: 50%; top: 0; bottom: 0;
@@ -40,26 +33,16 @@
             background-color: #00ff00; /* Green */
             transform: translateX(-50%);
             box-shadow: 0 0 4px rgba(0,0,0,0.8);
+            z-index: 10;
         }
-        .center-axis::after {
-            content: "TRỤC MÁY";
-            position: absolute;
-            top: 10px; left: 5px;
-            color: #00ff00;
-            font-size: 10px;
-            font-weight: bold;
-            background: rgba(0,0,0,0.5);
-            padding: 2px;
-        }
-
-        /* 2. Đường Trọng Lực (Gravity Line) - Màu Đỏ/Vàng */
-        /* Đường này sẽ được xoay bằng JS theo cảm biến */
+        
+        /* Gravity Line (Dây Dọi - Xoay theo cảm biến) */
         .gravity-line-container {
             position: absolute;
             top: 50%; left: 50%;
-            width: 2px; height: 120%; /* Dài hơn màn hình */
+            width: 2px; height: 120%;
             transform-origin: center center; 
-            /* JS sẽ set transform: rotate(...) */
+            z-index: 9;
         }
         .gravity-line {
             width: 100%; height: 100%;
@@ -69,83 +52,137 @@
                 #ff0000 10px,
                 transparent 10px,
                 transparent 15px
-            ); /* Nét đứt màu đỏ */
+            ); 
             box-shadow: 0 0 2px rgba(255,255,255,0.5);
         }
 
-        /* Angle Display Bubble */
-        .angle-bubble {
+        /* --- UI ZONES --- */
+        
+        /* 1. Left HUD (Thông số) */
+        .hud-left {
             position: absolute;
-            bottom: 100px; left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 30px;
-            font-family: monospace;
-            text-align: center;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 100px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 20;
+            pointer-events: none; /* Để không chặn touch nếu cần */
+        }
+
+        .angle-box {
+            background: rgba(0, 0, 0, 0.6);
             border: 2px solid white;
+            border-radius: 10px;
+            padding: 10px 5px;
+            text-align: center;
+            color: white;
+            backdrop-filter: blur(2px);
+        }
+
+        /* 2. Right Control (Nút bấm) */
+        .control-right {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
             z-index: 20;
         }
+
+        /* Capture Button Styling */
+        .btn-capture-ring {
+            width: 70px; height: 70px;
+            border-radius: 50%;
+            border: 4px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.2);
+            transition: all 0.2s;
+        }
+        .btn-capture-inner {
+            width: 50px; height: 50px;
+            border-radius: 50%;
+            background-color: #ef4444; /* Red */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .btn-capture-ring:active {
+            transform: scale(0.95);
+            background: rgba(255,255,255,0.4);
+        }
+
     </style>
 </head>
-<body class="bg-gray-900 min-h-screen p-4 flex flex-col items-center">
+<body class="bg-gray-900 min-h-screen p-2 flex flex-col items-center justify-center">
 
-    <div class="w-full max-w-md flex justify-between items-center mb-4 text-white">
-        <h1 class="font-bold text-lg"><i class="fa-solid fa-scale-unbalanced mr-2"></i>Pole Checker v1.0</h1>
-        <span id="saveStatus" class="text-xs bg-green-500 px-2 py-1 rounded hidden">Đã lưu!</span>
+    <div class="w-full flex justify-between items-center mb-2 px-2 text-white">
+        <h1 class="font-bold text-sm text-gray-400">Pole Checker v2.0</h1>
+        <span id="saveStatus" class="text-xs bg-green-500 px-2 py-1 rounded hidden font-bold">Đã lưu!</span>
     </div>
 
-    <button id="requestPermissionBtn" class="w-full max-w-md bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded mb-3 hidden transition">
-        <i class="fa-solid fa-compass mr-2"></i>Cấp quyền Cảm biến (iOS)
+    <button id="requestPermissionBtn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-4 rounded mb-2 hidden transition">
+        <i class="fa-solid fa-compass mr-2"></i>Bấm để kích hoạt Cảm biến
     </button>
 
-    <div class="camera-container max-w-md shadow-2xl border border-gray-700">
+    <div class="camera-container shadow-2xl border border-gray-700">
         
         <video id="cameraFeed" autoplay playsinline></video>
-        
         <canvas id="captureCanvas" class="hidden"></canvas>
-        
         <img id="capturedImage" class="absolute top-0 left-0 w-full h-full object-cover hidden z-30">
 
-        <div id="overlayLayer" class="overlay-layer">
-            
+        <div id="guidesLayer">
             <div class="center-axis"></div>
-
             <div id="gravityContainer" class="gravity-line-container">
                 <div class="gravity-line"></div>
-                <div class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-red-600 rounded-full border border-white"></div>
+                <div class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-red-600 rounded-full border border-white"></div>
             </div>
-
-            <div class="angle-bubble">
-                <div class="text-xs text-gray-300">ĐỘ NGHIÊNG</div>
-                <div id="angleDisplay" class="text-3xl font-bold">0.0°</div>
-                <div id="directionDisplay" class="text-xs text-yellow-400 font-bold mt-1">--</div>
-            </div>
-            
-            <div class="absolute top-1/2 left-1/2 w-4 h-4 bg-transparent border-2 border-white rounded-full transform -translate-x-1/2 -translate-y-1/2"></div>
-            <div class="absolute top-1/2 left-1/2 w-1 h-1 bg-white rounded-full transform -translate-x-1/2 -translate-y-1/2"></div>
-
+            <div class="absolute top-1/2 left-1/2 w-2 h-2 bg-white rounded-full transform -translate-x-1/2 -translate-y-1/2 shadow opacity-50"></div>
         </div>
 
-        <div class="absolute bottom-6 left-0 right-0 flex justify-center z-40 space-x-6">
-            <button id="btnStart" onclick="startCamera()" class="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg border-2 border-white/20">
+        <div id="hudLeft" class="hud-left hidden">
+            <div class="angle-box" id="angleBox">
+                <div class="text-[10px] text-gray-300 uppercase">Độ Nghiêng</div>
+                <div id="angleDisplay" class="text-2xl font-bold my-1">0.0°</div>
+                <div id="directionDisplay" class="text-[9px] font-bold text-green-400">THẲNG</div>
+            </div>
+            
+            <div class="angle-box">
+                <div class="text-[10px] text-gray-300">Pitch (Beta)</div>
+                <div id="betaDisplay" class="text-sm font-mono">0°</div>
+            </div>
+        </div>
+
+        <div class="control-right">
+            
+            <button id="btnStart" onclick="startCamera()" class="bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center animate-pulse">
                 <i class="fa-solid fa-power-off text-xl"></i>
             </button>
-            
-            <button id="btnCapture" onclick="captureCheck()" class="bg-white hover:bg-gray-200 text-red-600 w-20 h-20 rounded-full shadow-lg border-4 border-gray-400 flex items-center justify-center hidden transform active:scale-95 transition">
-                <i class="fa-solid fa-camera text-3xl"></i>
+
+            <button id="btnCapture" onclick="captureCheck()" class="btn-capture-ring hidden">
+                <div class="btn-capture-inner"></div>
             </button>
 
-            <div id="postCaptureActions" class="hidden flex space-x-4">
-                <button onclick="retake()" class="bg-gray-600 text-white p-4 rounded-full shadow-lg">
-                    <i class="fa-solid fa-rotate-right"></i>
+            <div id="postCaptureActions" class="hidden flex flex-col gap-4">
+                <button onclick="saveToFirebase()" id="btnSaveFirebase" class="w-14 h-14 bg-green-600 text-white rounded-full shadow-lg flex items-center justify-center">
+                    <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
                 </button>
-                <button id="btnSaveFirebase" onclick="saveToFirebase()" class="bg-red-600 text-white p-4 rounded-full shadow-lg font-bold flex items-center">
-                    <i class="fa-solid fa-cloud-arrow-up mr-2"></i> Lưu
+                <button onclick="retake()" class="w-14 h-14 bg-gray-600 text-white rounded-full shadow-lg flex items-center justify-center">
+                    <i class="fa-solid fa-rotate-right text-xl"></i>
                 </button>
             </div>
         </div>
+
+    </div>
+
+    <div class="text-center mt-2 text-gray-500 text-xs px-4">
+        * Cầm máy dọc. Ngắm đường <span class="text-green-500 font-bold">XANH</span> trùng mép cột.
     </div>
 
     <script type="module">
@@ -164,75 +201,67 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Expose save function globally
         window.saveDataToFirestore = async function(data) {
             const btn = document.getElementById('btnSaveFirebase');
-            const originalContent = btn.innerHTML;
+            const originalHTML = btn.innerHTML;
             
             try {
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
                 btn.disabled = true;
 
-                const docRef = await addDoc(collection(db, "pole_checks"), {
+                await addDoc(collection(db, "pole_checks"), {
                     ...data,
                     timestamp: serverTimestamp(),
                     device_agent: navigator.userAgent
                 });
 
-                console.log("Saved ID: ", docRef.id);
                 document.getElementById('saveStatus').classList.remove('hidden');
-                
-                // Reset UI after short delay
                 setTimeout(() => {
                     document.getElementById('saveStatus').classList.add('hidden');
-                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Đã lưu';
-                }, 1000);
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }, 2000);
 
             } catch (e) {
                 alert("Lỗi lưu: " + e.message);
-                btn.innerHTML = originalContent;
+                btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }
         }
     </script>
 
     <script>
-        // --- Variables ---
-        let currentGamma = 0; // Left/Right Tilt (Roll)
-        let currentBeta = 0;  // Front/Back Tilt (Pitch)
+        let currentGamma = 0; 
+        let currentBeta = 0;
         let isCameraActive = false;
         let videoStream = null;
         let capturedData = null;
 
-        // --- 1. Camera Logic ---
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
                 });
-                
                 videoStream = stream;
                 document.getElementById('cameraFeed').srcObject = stream;
                 
-                // UI Switch
                 document.getElementById('btnStart').classList.add('hidden');
                 document.getElementById('btnCapture').classList.remove('hidden');
+                document.getElementById('hudLeft').classList.remove('hidden');
+                
                 document.getElementById('capturedImage').classList.add('hidden');
-                document.getElementById('overlayLayer').classList.remove('hidden');
+                document.getElementById('guidesLayer').classList.remove('hidden');
+                
                 isCameraActive = true;
-
-                // Start Sensor Logic
                 initSensors();
 
             } catch (err) {
-                alert("Không thể mở Camera: " + err.message);
+                alert("Lỗi Camera: " + err.message);
             }
         }
 
-        // --- 2. Sensor Logic (Electronic Plumb Line) ---
         function initSensors() {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                // iOS 13+
                 document.getElementById('requestPermissionBtn').classList.remove('hidden');
                 document.getElementById('requestPermissionBtn').onclick = () => {
                     DeviceOrientationEvent.requestPermission().then(resp => {
@@ -240,73 +269,45 @@
                             window.addEventListener('deviceorientation', handleOrientation);
                             document.getElementById('requestPermissionBtn').classList.add('hidden');
                         }
-                    }).catch(console.error);
+                    });
                 };
             } else {
-                // Android / Standard
                 window.addEventListener('deviceorientation', handleOrientation);
             }
         }
 
         function handleOrientation(event) {
             if (!isCameraActive) return;
-
-            // Gamma: Góc nghiêng trái/phải (-90 đến 90). Đây là thông số quan trọng nhất để check cột thẳng đứng.
-            // Beta: Góc nghiêng trước/sau. Dùng để nhắc người dùng giữ máy thẳng.
-            
             const gamma = event.gamma; 
-            const beta = event.beta; 
-            
+            const beta = event.beta;
             if (gamma === null) return;
 
             currentGamma = gamma;
             currentBeta = beta;
+            
+            // 1. Rotate Gravity Line
+            document.getElementById('gravityContainer').style.transform = `rotate(${-gamma}deg)`;
 
-            updateUI(gamma, beta);
-        }
-
-        function updateUI(gamma, beta) {
-            const angleDisplay = document.getElementById('angleDisplay');
-            const dirDisplay = document.getElementById('directionDisplay');
-            const gravityLine = document.getElementById('gravityContainer');
-            const bubble = document.querySelector('.angle-bubble');
-
-            // 1. Rotate the "Gravity Line"
-            // Nếu điện thoại nghiêng sang phải (Gamma dương), trọng lực "kéo" sang trái so với màn hình.
-            // Do đó ta xoay ngược lại giá trị gamma.
-            gravityLine.style.transform = `rotate(${-gamma}deg)`;
-
-            // 2. Display Values
+            // 2. Update Left HUD
             const absGamma = Math.abs(gamma);
-            angleDisplay.innerText = absGamma.toFixed(1) + "°";
+            const angleBox = document.getElementById('angleBox');
+            const angleText = document.getElementById('angleDisplay');
+            const dirText = document.getElementById('directionDisplay');
 
-            // 3. Direction & Color Logic
+            angleText.innerText = absGamma.toFixed(1) + "°";
+            document.getElementById('betaDisplay').innerText = Math.round(beta) + "°";
+
             if (absGamma < 1.0) {
-                // OK - Khá thẳng
-                bubble.style.borderColor = "#00ff00"; // Green border
-                angleDisplay.style.color = "#00ff00";
-                dirDisplay.innerText = "THẲNG ĐỨNG (OK)";
-                dirDisplay.style.color = "#00ff00";
+                angleBox.style.borderColor = "#4ade80"; // Green 400
+                dirText.innerText = "THẲNG ĐỨNG";
+                dirText.className = "text-[9px] font-bold text-green-400";
             } else {
-                // Nghiêng
-                bubble.style.borderColor = "#ff0000"; // Red border
-                angleDisplay.style.color = "#ffcc00"; // Yellow text
-                if (gamma > 0) {
-                    dirDisplay.innerText = "MÁY NGHIÊNG PHẢI";
-                    // Tức là cột đang nghiêng trái so với máy (nếu máy song song cột)
-                } else {
-                    dirDisplay.innerText = "MÁY NGHIÊNG TRÁI";
-                }
-            }
-
-            // Optional: Warning if holding phone flat (like looking at map)
-            if (beta < 45 && beta > -45) {
-               dirDisplay.innerText = "DỰNG MÁY LÊN!";
-               dirDisplay.style.color = "red";
+                angleBox.style.borderColor = "#f87171"; // Red 400
+                dirText.innerText = (gamma > 0) ? "NGHIÊNG PHẢI" : "NGHIÊNG TRÁI";
+                dirText.className = "text-[9px] font-bold text-red-400";
             }
         }
 
-        // --- 3. Capture & Drawing ---
         function captureCheck() {
             if (!videoStream) return;
             const video = document.getElementById('cameraFeed');
@@ -315,56 +316,57 @@
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
+            const cx = canvas.width / 2;
 
-            // 1. Draw Video Frame
+            // 1. Draw Image
             ctx.drawImage(video, 0, 0);
 
-            // 2. Draw Overlay Data onto Canvas (So result image proves the measurement)
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-
-            // Draw Fixed Center Axis (Green)
+            // 2. Draw Center Axis (Green)
             ctx.beginPath();
             ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 4;
+            ctx.lineWidth = 5;
             ctx.moveTo(cx, 0);
             ctx.lineTo(cx, canvas.height);
             ctx.stroke();
 
-            // Draw Gravity Line (Red) - Rotated by Gamma
+            // 3. Draw Gravity Line (Red) - Rotated
             ctx.save();
-            ctx.translate(cx, cy);
-            ctx.rotate(-currentGamma * Math.PI / 180); // Rotate canvas context
+            ctx.translate(cx, canvas.height/2);
+            ctx.rotate(-currentGamma * Math.PI / 180);
             
             ctx.beginPath();
             ctx.strokeStyle = "red";
-            ctx.lineWidth = 3;
-            ctx.setLineDash([15, 10]); // Dashed line
-            ctx.moveTo(0, -canvas.height); // Draw long line
+            ctx.lineWidth = 4;
+            ctx.setLineDash([20, 15]);
+            ctx.moveTo(0, -canvas.height);
             ctx.lineTo(0, canvas.height);
             ctx.stroke();
             ctx.restore();
 
-            // Draw Angle Text Box
+            // 4. Burn Data Text (Top Left Corner - to allow clear center view)
+            // Vẽ nền đen mờ ở góc trái để hiển thị thông số rõ ràng
             ctx.fillStyle = "rgba(0,0,0,0.6)";
-            ctx.fillRect(20, canvas.height - 150, 300, 100);
-            
+            ctx.fillRect(20, 20, 350, 120); // Top left box
+
             ctx.fillStyle = "white";
             ctx.font = "bold 40px Arial";
-            ctx.fillText(`Góc: ${Math.abs(currentGamma).toFixed(1)}°`, 40, canvas.height - 90);
+            ctx.fillText(`Độ nghiêng: ${Math.abs(currentGamma).toFixed(1)}°`, 40, 70);
             
-            ctx.font = "20px Arial";
-            ctx.fillStyle = Math.abs(currentGamma) < 1 ? "#00ff00" : "yellow";
-            const statusText = Math.abs(currentGamma) < 1 ? "ĐẠT YÊU CẦU" : "BỊ NGHIÊNG";
-            ctx.fillText(statusText, 40, canvas.height - 60);
+            ctx.font = "30px Arial";
+            if(Math.abs(currentGamma) < 1) {
+                ctx.fillStyle = "#00ff00";
+                ctx.fillText("ĐÁNH GIÁ: ĐẠT", 40, 115);
+            } else {
+                ctx.fillStyle = "yellow";
+                ctx.fillText("ĐÁNH GIÁ: NGHIÊNG", 40, 115);
+            }
 
-            // Display result
+            // Show Result
             const dataURL = canvas.toDataURL('image/jpeg');
-            const imgDisplay = document.getElementById('capturedImage');
-            imgDisplay.src = dataURL;
-            imgDisplay.classList.remove('hidden');
+            document.getElementById('capturedImage').src = dataURL;
+            document.getElementById('capturedImage').classList.remove('hidden');
 
-            // Save Data for Cloud
+            // Prep Data
             capturedData = {
                 tilt_angle: currentGamma,
                 pitch_beta: currentBeta,
@@ -372,19 +374,20 @@
                 image_base64: (dataURL.length < 500000) ? dataURL : "skipped_large"
             };
 
-            // Switch UI
+            // Switch Controls
             document.getElementById('btnCapture').classList.add('hidden');
-            document.getElementById('overlayLayer').classList.add('hidden'); // Hide live overlay
+            document.getElementById('guidesLayer').classList.add('hidden'); 
+            document.getElementById('hudLeft').classList.add('hidden'); // Hide HUD on preview
             document.getElementById('postCaptureActions').classList.remove('hidden');
-            document.getElementById('postCaptureActions').classList.add('flex');
         }
 
         function retake() {
             document.getElementById('capturedImage').classList.add('hidden');
             document.getElementById('postCaptureActions').classList.add('hidden');
-            document.getElementById('postCaptureActions').classList.remove('flex');
+            
             document.getElementById('btnCapture').classList.remove('hidden');
-            document.getElementById('overlayLayer').classList.remove('hidden');
+            document.getElementById('guidesLayer').classList.remove('hidden');
+            document.getElementById('hudLeft').classList.remove('hidden');
         }
 
         function saveToFirebase() {
